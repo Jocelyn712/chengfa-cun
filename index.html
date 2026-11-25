@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="乘法村">
+  <meta name="theme-color" content="#8cc45a">
+  <link rel="apple-touch-icon" href="icon.png">
+  <title>乘法村</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <header class="top">
+    <button type="button" id="logo" class="logo" aria-label="回村莊（長按打開家長頁）">
+      <span class="logo-block" aria-hidden="true"></span>乘法村
+    </button>
+    <nav>
+      <button type="button" data-action="village" data-nav="village">村莊</button>
+      <button type="button" data-action="bridge" data-nav="bridge">修橋</button>
+      <button type="button" data-action="today" data-nav="mission">今日小任務</button>
+    </nav>
+    <div class="purse">
+      <span class="chip" aria-label="木材"><svg viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><rect x="1" y="4" width="14" height="9" fill="#9c6a3d"/><rect x="1" y="4" width="14" height="2" fill="#c8894d"/><rect x="12" y="4" width="3" height="9" fill="#e3b47a"/></svg><b id="wood-count">0</b></span>
+      <span class="chip" aria-label="村民"><svg viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><rect x="5" y="1" width="6" height="6" fill="#f0c08a"/><rect x="5" y="1" width="6" height="2" fill="#5a3b2e"/><rect x="4" y="7" width="8" height="6" fill="#4fa88a"/><rect x="5" y="13" width="2" height="3" fill="#33495e"/><rect x="9" y="13" width="2" height="3" fill="#33495e"/></svg><b id="villager-count">0</b></span>
+    </div>
+  </header>
+  <main id="app"></main>
+</body>
+</html>
