@@ -374,6 +374,28 @@ function parentView() {
   return `<div class="parent">
     <div class="panel">
       <h1>家長頁</h1>
+      <h2>怎麼玩</h2>
+      <h3>第一次玩：先修橋</h3>
+      <p>按「去修橋」，把兩段橋修完，大約 5 分鐘。</p>
+      <ul class="rules">
+        <li>第一段：直接搬木板鋪橋，不用答題，孩子會看到 6＋6＝12，也就是 6×2。</li>
+        <li>第二段：要先算出需要幾塊木板。算錯可以補領，用線索也能過關。</li>
+      </ul>
+      <h3>之後每天：今日小任務 → 回村莊蓋房子</h3>
+      <ol class="rules">
+        <li>按「今日小任務」，系統會挑兩題。系統會記得孩子卡住的題目，隔一段時間再出；也會照順序帶 6、7、8、9 的新題。</li>
+        <li>做完任務會拿到木材。</li>
+        <li>回到村莊，用木材升級地點。每個地點升到第 3 級，就會有一位村民搬進來，一共 8 位。</li>
+      </ol>
+      <h3>卡住的時候</h3>
+      <ul class="rules">
+        <li>每題都有線索，會一層一層打開，但不會直接給答案。</li>
+        <li>也可以按「先跳過」。</li>
+        <li>不計時、不扣分，答錯也不會卡關。</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h2>學習紀錄</h2>
       <p>每格顯示這個算式「最近一次」的狀況。只有綠色才算熟了；黃色、藍色、灰色會在之後的小任務再出現。</p>
       <ul class="legend">${legend.map(([key, label]) => `<li><i class="${key}"></i>${label}${key ? ` ${totals[key]}` : ''}</li>`).join('')}</ul>
       <div class="table-wrap"><table class="facts"><tbody>${SIZES.map(size =>
