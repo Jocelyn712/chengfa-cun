@@ -30,6 +30,7 @@ export function freshState() {
     today: null,
     eggDue: null,
     active: null,
+    backupAt: null,
   };
 }
 

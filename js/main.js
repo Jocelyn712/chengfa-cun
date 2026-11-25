@@ -342,7 +342,22 @@ function todayDoneView() {
 }
 
 // ── 家長頁：孩子玩的畫面不出現這些紀錄。
+const backupDate = () => state.backupAt ?
+  `上次複製：${new Date(state.backupAt).toLocaleDateString('zh-TW')}` : '還沒複製過備份碼。';
+
+// 判斷現在是怎麼打開的，給家長對應的存檔建議。
+function whereAmI() {
+  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  const safari = /Safari/.test(navigator.userAgent) && !/Chrome|CriOS|Edg|FxiOS|Firefox|Android/.test(navigator.userAgent);
+  if (standalone) return { ok: true, text: '目前是從主畫面圖示打開，這是最推薦的方式。' };
+  if (ios) return { ok: false, text: '目前是在瀏覽器分頁裡玩。建議照下面的方法加入主畫面。' };
+  if (safari) return { ok: false, text: '目前是用 Mac 的 Safari 玩。建議改用 Chrome 或 Edge，或至少每週打開一次。' };
+  return { ok: true, text: '目前用的瀏覽器不會因為幾天沒開就清掉存檔，偶爾備份就好。' };
+}
+
 function parentView() {
+  const where = whereAmI();
   const legend = [
     ['independent', '自己答對'], ['supported', '用線索或答錯後完成'], ['explored', '動手看過'], ['skipped', '跳過'], ['', '還沒練'],
   ];
@@ -365,11 +380,22 @@ function parentView() {
         `<tr>${range(9).map(i => cell(size, i + 1)).join('')}</tr>`).join('')}</tbody></table></div>
     </div>
     <div class="panel">
-      <h2>保存進度</h2>
-      <p>進度存在這台 iPad 的 Safari 裡。Safari 有時會清掉太久沒開的網站資料，建議：</p>
-      <ol><li>在 Safari 按「分享」→「加入主畫面」，以後都從主畫面的圖示打開。</li>
-        <li>主畫面圖示和 Safari 分頁的進度是分開存的。已經在 Safari 玩過的話，先在這裡複製備份碼，再到主畫面圖示的家長頁還原。</li>
-        <li>偶爾把下面的備份碼複製起來，存到備忘錄。</li></ol>
+      <h2>存檔規則</h2>
+      <p class="where ${where.ok ? 'ok' : ''}">${where.text}</p>
+      <ul class="rules">
+        <li>進度只存在<b>這台裝置的這個瀏覽器</b>裡，不會上傳，也不會在不同裝置之間同步。</li>
+        <li>換裝置、換瀏覽器，或是從 Safari 分頁改成主畫面圖示，進度都不會自動帶過去，要用下面的備份碼搬。</li>
+        <li>Safari（iPad、iPhone、Mac 都一樣）：如果連續 7 天有在用 Safari，卻都沒有打開乘法村，Safari 可能會自動清掉存檔。</li>
+        <li>清除瀏覽紀錄和網站資料，或用無痕模式玩，存檔也會不見。</li>
+      </ul>
+      <h2>建議這樣保存</h2>
+      <ul class="rules">
+        <li><b>iPad、iPhone：加入主畫面。</b>在 Safari 按分享按鈕（方框加向上箭頭）→「加入主畫面」→「新增」，以後都從主畫面的乘法村圖示打開。從主畫面打開會全螢幕顯示，存檔也有自己的天數計算，比在 Safari 分頁裡不容易被清掉。</li>
+        <li><b>筆電：用 Chrome 或 Edge 玩。</b>這兩個瀏覽器不會因為幾天沒開就清掉存檔。如果用 Mac 的 Safari，至少每週打開玩一次。</li>
+        <li><b>不管用哪種，都偶爾複製備份碼</b>，貼到備忘錄或傳給自己。存檔不見時，貼回下面的「還原進度」就能接著玩。</li>
+      </ul>
+      <h2>備份碼</h2>
+      <p class="soft backup-date">${backupDate()}</p>
       <textarea id="backup-out" readonly rows="3">${encodeBackup(state)}</textarea>
       <div class="stack row">${btn('複製備份碼', 'copy-backup', { cls: 'primary' })}</div>
       <h2>還原進度</h2>
@@ -575,6 +601,9 @@ const actions = {
     const field = app.querySelector('#backup-out');
     try {
       await navigator.clipboard.writeText(field.value);
+      state.backupAt = Date.now();
+      save();
+      app.querySelector('.backup-date').textContent = backupDate();
       parentNote('已複製，可以貼到備忘錄保存。');
     } catch {
       field.select();
