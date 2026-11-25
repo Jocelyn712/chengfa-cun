@@ -142,6 +142,8 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 32px max(16px, env(sa
 .stock { font-size: 19px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
 .stock .wood-icon { width: 26px; height: 26px; }
 .place.locked { border-top-color: #8aa6b4; filter: saturate(.7); }
+.weed { animation: sway 2.6s ease-in-out infinite; transform-origin: bottom center; transform-box: fill-box; }
+.weedy { font-size: 17px; font-weight: 800; background: #e7f2d9; border-radius: 12px; padding: 10px 12px; margin: 0; line-height: 1.6; }
 .villagers { padding: 16px 20px; background: var(--paper); border: 4px solid var(--line); border-radius: 14px; display: grid; gap: 10px; }
 .villagers h3 { font-size: 18px; }
 .villager-row { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
@@ -207,6 +209,7 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 32px max(16px, env(sa
 @keyframes pop { from { transform: scale(.7); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes nudge { 50% { transform: translateY(-3px); } }
 @keyframes grow { 0% { transform: scale(.9); } 60% { transform: scale(1.06); } 100% { transform: none; } }
+@keyframes sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
 
 /* ── 直向 iPad 與較窄的畫面 */
 @media (max-width: 960px) {
@@ -225,5 +228,5 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 32px max(16px, env(sa
 }
 @media (prefers-reduced-motion: reduce) {
   .hero { transition-duration: .2s; }
-  .drop, .blink, .group.tappable, .group.open .art, .plot.grow { animation: none; }
+  .drop, .blink, .group.tappable, .group.open .art, .plot.grow, .weed { animation: none; }
 }

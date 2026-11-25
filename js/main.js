@@ -1,11 +1,12 @@
 import {
-  ACROSS_SIZES, BRIDGE, BRIDGE_STOCK_SIZE, MAX_LEVEL, PLACES, SIZES, UPGRADE_COST, VILLAGERS,
+  ACROSS_SIZES, BRIDGE, BRIDGE_STOCK_SIZE, MAX_LEVEL, PLACES, SIZES, STALE_DAYS, UPGRADE_COST,
+  VILLAGERS, WEED_WOOD,
 } from './data.js';
 import {
   STORAGE_KEY, allFacts, decodeBackup, earn, encodeBackup, factKey, freshState,
-  isMastered, isNewFact, isUnlocked, knownBefore, outcomeOf, placePlanks, product, recommend,
-  record, repeatedSum, revive, rewardFor, segmentDone, stockOf, totalWood, upgrade, upgradeCost,
-  villagerCount,
+  isMastered, isNewFact, isUnlocked, isWeedy, knownBefore, outcomeOf, placePlanks, product,
+  recommend, record, repeatedSum, revive, rewardFor, segmentDone, stockOf, totalWood, upgrade,
+  upgradeCost, villagerCount, visit, weedyPlaces,
 } from './model.js';
 import {
   bridgeScene, closedGroup, freeScene, heroTransform, openGroup, propIcon, villageHeroPath,
@@ -106,10 +107,13 @@ function villagersPanel() {
 function welcomePanel() {
   const resume = canResume();
   const bridgeDone = state.bridge.segments.every(s => s.flagged);
+  const weedy = weedyPlaces(state);
   return `<div class="panel">
     <h1>乘法村</h1>
     <p>幫村民做事，就能拿到木材。在哪裡幫忙，木材就堆在哪裡，用來蓋那個地方。</p>
     ${bridgeDone ? '' : '<p class="soft">對岸的四個地方還過不去，要先把橋修好。</p>'}
+    ${weedy.length ?
+      `<p class="weedy">🌿 ${weedy.map(size => PLACES[size].name).join('、')}長草了！回去幫個忙就能除草，每個地方多拿 ${WEED_WOOD} 塊木材。</p>` : ''}
     <div class="stack">
       ${resume ? btn(`繼續：${resume}`, 'resume', { cls: 'primary big' }) : ''}
       ${bridgeDone ? '' : btn('去修橋', 'bridge', { cls: resume ? 'big' : 'primary big' })}
@@ -153,6 +157,8 @@ function placePanel(size) {
     <p>${place.each}。</p>
     <div class="stars" aria-label="第 ${level} 級">${stars}</div>
     <p class="stock">${place.name}的木材 ${wood(have)}</p>
+    ${isWeedy(state, size) ?
+      `<p class="weedy">🌿 好幾天沒來，長草了！幫一次忙就順手除草，多拿 ${WEED_WOOD} 塊木材。</p>` : ''}
     <div class="stack">
       ${btn('幫忙', 'pick', { cls: 'primary big', attrs: `data-size="${size}"` })}
       ${cost === null ? `<p class="happy">${VILLAGERS[size]}搬進來了！</p>` :
@@ -329,6 +335,7 @@ function workPanel(size, count, mission) {
     return `<div class="panel">${tag}<h2>${place.done}</h2>
       ${equation(size, count)}${eggLink}
       <p class="reward">${place.name}拿到 ${wood(mission.reward)} 木材</p>
+      ${mission.weeded ? `<p class="happy">🌿 草除乾淨了！${place.name}多送 ${WEED_WOOD} 塊木材。</p>` : ''}
       ${mission.repeat ? `<p class="soft">這題已經很熟了，再做一次拿 1 塊。想多拿一點，可以挑還沒練過的。</p>` : ''}
       ${cost !== null && stockOf(state, size) >= cost ? `<p class="soft">木材夠了，可以去升級${place.name}！</p>` : ''}
       <div class="stack">${next}${btn('回村莊', 'village-place', { cls: 'big', attrs: `data-size="${size}"` })}</div></div>`;
@@ -434,6 +441,13 @@ function parentView() {
         <li>第一次自己答對一個算式給 3 塊，用線索或答錯後完成給 2 塊。<b>已經自己答對過的算式再做一次只給 1 塊</b>，所以沒辦法一直刷同一題蓋完村莊；還沒熟的題目永遠給滿額，不會卡住。</li>
         <li>全部蓋完大約要答對 56 題，平均每個地點 7 題。</li>
       </ol>
+      <h3>🌿 長草</h3>
+      <p>還在蓋的地點，去過之後 ${STALE_DAYS} 天沒回去就會長草，村莊地圖上看得到，首頁也會列出來。回去幫一次忙就順手除草，那個地點多送 ${WEED_WOOD} 塊木材。</p>
+      <ul class="rules">
+        <li>只有「開了頭卻放著不管」的地點會長草。<b>蓋滿三級的不會長草</b>，村民已經搬進來了，也不需要再回去。</li>
+        <li>長草<b>不扣任何東西</b>，進度、木材、學習紀錄都不會變少，只是多一個回去的理由。</li>
+        <li>按「先跳過」不算回來過，草還在。</li>
+      </ul>
       <h3>對岸的 6、7、8、9</h3>
       <p>雞舍、活動中心、章魚池、棋盤廣場在河對岸，<b>橋修好、走過去才進得去</b>，在那之前小任務也只會出 2～5。走過橋的時候，多的木板會堆在雞舍旁邊，剛好夠蓋第一級。</p>
       <h3>卡住的時候</h3>
@@ -545,6 +559,8 @@ function finishMission(mission, outcome) {
   const { size, count } = route;
   // 這題之前就已經自己答對過的話，這次只算複習，木材會變少。
   const repeat = isMastered(state.records[factKey(size, count)]);
+  // 幾天沒來的地點長草了，這次來幫忙就順手除草。跳過不算回來過。
+  const weeded = outcome !== 'skipped' && isWeedy(state, size);
   record(state, size, count, outcome);
   if (size === 6 && count === 3) state.eggDue = null;
   if (route.today) {
@@ -562,7 +578,9 @@ function finishMission(mission, outcome) {
   }
   mission.phase = 'done';
   mission.repeat = repeat;
-  mission.reward = earn(state, size, rewardFor(outcome, repeat));
+  mission.weeded = weeded;
+  mission.reward = earn(state, size, rewardFor(outcome, repeat) + (weeded ? WEED_WOOD : 0));
+  visit(state, size);
   state.active = null;
   render();
 }

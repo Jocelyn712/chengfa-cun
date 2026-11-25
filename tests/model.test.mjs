@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ACROSS_SIZES, BRIDGE, PLACES, SIZES, UPGRADE_COST } from '../js/data.js';
+import { ACROSS_SIZES, BRIDGE, PLACES, SIZES, STALE_DAYS, UPGRADE_COST } from '../js/data.js';
 import {
-  allFacts, decodeBackup, earn, eggReady, encodeBackup, factKey, freshState, isMastered,
-  isNewFact, isUnlocked, knownBefore, outcomeOf, placePlanks, product, recommend, record,
-  repeatedSum, revive, rewardFor, segmentDone, stockOf, totalWood, upgrade, upgradeCost,
-  villagerCount,
+  allFacts, daysSince, decodeBackup, earn, eggReady, encodeBackup, factKey, freshState,
+  isMastered, isNewFact, isUnlocked, isWeedy, knownBefore, outcomeOf, placePlanks, product,
+  recommend, record, repeatedSum, revive, rewardFor, segmentDone, stockOf, today, totalWood,
+  upgrade, upgradeCost, villagerCount, visit, weedyPlaces,
 } from '../js/model.js';
 import {
   bridgeScene, closedGroup, freeScene, openGroup, villageHeroPath, villageHeroStop, villageScene,
@@ -217,6 +217,51 @@ test('全部蓋完要答對 56 題，而且八個乘法表都要練到', () => {
   }
 });
 
+test('日期只算到「日」，隔天就是隔一天', () => {
+  const noon = new Date(2026, 10, 25, 12, 0);
+  assert.equal(today(noon), '2026-11-25');
+  assert.equal(today(new Date(2026, 0, 5, 23, 59)), '2026-01-05');
+  assert.equal(daysSince('2026-11-25', noon), 0);
+  // 晚上 11 點玩，隔天早上 7 點算一天，不是「還沒滿 24 小時」。
+  assert.equal(daysSince('2026-11-25', new Date(2026, 10, 26, 7, 0)), 1);
+  assert.equal(daysSince('2026-11-22', noon), 3);
+  assert.equal(daysSince('', noon), 0, '沒去過就沒有天數');
+});
+
+test('🌿 還在蓋的地點幾天沒回去就長草，蓋滿的不長草', () => {
+  const day = (y, m, d) => new Date(y, m - 1, d, 10, 0);
+  const state = crossed();
+  assert.deepEqual(weedyPlaces(state, day(2026, 11, 25)), [], '沒去過的地點不長草');
+
+  visit(state, 2, day(2026, 11, 20));
+  visit(state, 3, day(2026, 11, 24));
+  assert.equal(state.visited[2], '2026-11-20');
+  assert.equal(isWeedy(state, 2, day(2026, 11, 22)), false, `還沒滿 ${STALE_DAYS} 天不長草`);
+  assert.equal(isWeedy(state, 2, day(2026, 11, 23)), true, `第 ${STALE_DAYS} 天長草`);
+  assert.equal(isWeedy(state, 3, day(2026, 11, 25)), false, '前天才去過，不長草');
+  assert.deepEqual(weedyPlaces(state, day(2026, 11, 25)), [2]);
+
+  // 蓋滿的地點不長草：木材對它已經沒用了，不該再叫孩子回去。
+  state.levels[2] = UPGRADE_COST.length;
+  assert.equal(isWeedy(state, 2, day(2026, 11, 25)), false, '蓋滿就不長草');
+  state.levels[2] = UPGRADE_COST.length - 1;
+  assert.equal(isWeedy(state, 2, day(2026, 11, 25)), true, '還差一級還是會長草');
+
+  // 回去幫忙就除草。
+  visit(state, 2, day(2026, 11, 25));
+  assert.equal(isWeedy(state, 2, day(2026, 11, 25)), false, '今天去過就沒草了');
+});
+
+test('🌿 對岸還過不去的地點不長草', () => {
+  const day = new Date(2026, 10, 25, 10, 0);
+  const before = freshState();
+  for (const size of ACROSS_SIZES) visit(before, size, new Date(2026, 10, 1, 10, 0));
+  assert.deepEqual(weedyPlaces(before, day), [], '進不去的地方不會怪孩子沒去');
+  const after = revive(JSON.parse(JSON.stringify(before)));
+  after.bridge.segments.forEach(segment => { segment.flagged = true; });
+  assert.deepEqual(weedyPlaces(after, day), ACROSS_SIZES, '過橋後就開始算天數');
+});
+
 test('備份碼可以還原，包含中文與進度', () => {
   const state = freshState();
   record(state, 7, 3, 'supported');
@@ -264,6 +309,12 @@ test('地圖都畫得出來', () => {
     assert.match(villageScene(state, size), /修好橋才過得去/, '橋沒修好，對岸蓋著霧');
   }
   assert.doesNotMatch(villageScene(crossed(), 6), /修好橋才過得去/, '過橋後霧散開');
+  const weedy = crossed();
+  const before = villageScene(weedy, null);
+  visit(weedy, 2, new Date(Date.now() - STALE_DAYS * 864e5));
+  const after = villageScene(weedy, null);
+  assert.ok(after.length > before.length, '長草的地點會多畫出草叢');
+  assert.match(after, /長草了/, '長草的地點報讀得出來');
 
   for (let size = 2; size <= 9; size++) {
     for (let rows = 1; rows <= 9; rows++) {

@@ -1,5 +1,5 @@
 import {
-  ACROSS_SIZES, BRIDGE, MAX_LEVEL, NEW_SIZES, REWARD, SIZES, UPGRADE_COST,
+  ACROSS_SIZES, BRIDGE, MAX_LEVEL, NEW_SIZES, REWARD, SIZES, STALE_DAYS, UPGRADE_COST,
 } from './data.js';
 
 export const STORAGE_KEY = 'kaimath-village-v1';
@@ -20,6 +20,31 @@ export const crossedRiver = state => Boolean(state.bridge.segments[1].flagged);
 export const isUnlocked = (state, size) =>
   !ACROSS_SIZES.includes(size) || crossedRiver(state);
 
+// 只記到日，不記時間，這樣「隔天」就是真的隔一天，不是過了 24 小時。
+export function today(now = new Date()) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+export function daysSince(date, now = new Date()) {
+  if (!date) return 0;
+  return Math.round((new Date(`${today(now)}T00:00:00`) - new Date(`${date}T00:00:00`)) / 864e5);
+}
+
+// 🌿 去過、還沒蓋滿、又幾天沒回去的地點會長草。蓋滿的不長草，木材對它已經沒用了。
+export function isWeedy(state, size, now = new Date()) {
+  if (!isUnlocked(state, size) || state.levels[size] >= MAX_LEVEL) return false;
+  const last = state.visited?.[size];
+  return Boolean(last) && daysSince(last, now) >= STALE_DAYS;
+}
+
+export const weedyPlaces = (state, now = new Date()) =>
+  SIZES.filter(size => isWeedy(state, size, now));
+
+export function visit(state, size, now = new Date()) {
+  state.visited[size] = today(now);
+}
+
 export function freshState() {
   return {
     version: VERSION,
@@ -28,6 +53,8 @@ export function freshState() {
     // 木材分地點存：在鞋店幫忙拿到的木材，只能拿來蓋鞋店。
     stock: Object.fromEntries(SIZES.map(size => [size, 0])),
     levels: Object.fromEntries(SIZES.map(size => [size, 0])),
+    // 每個地點上次去是哪一天，用來算長草。
+    visited: {},
     bridge: {
       position: 0, // 0 起點、1 小島、2 對岸
       segments: BRIDGE.segments.map(rows => ({
@@ -51,6 +78,7 @@ export function revive(saved) {
   const state = { ...base, ...saved, version: VERSION };
   state.levels = { ...base.levels, ...saved.levels };
   state.stock = { ...base.stock, ...saved.stock };
+  state.visited = { ...base.visited, ...saved.visited };
   // 版本 1 的木材是共用的一堆，平均分給八個地點。
   if (saved.version === 1) {
     const each = Math.floor((saved.wood ?? 0) / SIZES.length);

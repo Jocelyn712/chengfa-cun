@@ -1,5 +1,5 @@
 import { BRIDGE, MAX_LEVEL, PLACES, SIZES } from './data.js';
-import { isUnlocked, segmentDone } from './model.js';
+import { isUnlocked, isWeedy, segmentDone } from './model.js';
 
 // 全部用方塊（rect）畫，維持麥塊風的像素感。
 const r = (x, y, w, h, fill, extra = '') =>
@@ -207,7 +207,18 @@ const PLOTS = {
   2: [20, 318], 3: [190, 318], 4: [450, 318], 5: [620, 318],
 };
 
-function building(size, level, selected, locked = false) {
+// 🌿 長草：幾叢比地面深的草，長在空地上，看得出來這裡沒人管。輕輕搖，讓孩子注意到。
+function weeds(x, y) {
+  const tuft = (tx, ty, h, delay) =>
+    `<g class="weed" style="animation-delay:${delay}ms">
+      ${r(tx + 4, ty, 4, h, '#3f7a2c')}${r(tx, ty + 5, 4, h - 5, '#56993d')}${r(tx + 8, ty + 7, 4, h - 7, '#56993d')}
+      ${r(tx + 4, ty, 4, 4, '#6fb84e')}</g>`;
+  return [[x + 6, y + 142, 26], [x + 32, y + 150, 20], [x + 68, y + 154, 16],
+    [x + 104, y + 146, 24], [x + 134, y + 140, 28]]
+    .map(([tx, ty, h], i) => tuft(tx, ty, h, i * 240)).join('');
+}
+
+function building(size, level, selected, locked = false, weedy = false) {
   const place = PLACES[size];
   const [x, y] = PLOTS[size];
   const parts = [];
@@ -242,10 +253,11 @@ function building(size, level, selected, locked = false) {
   const fog = locked ? `${r(x - 4, y - 12, 168, 202, 'rgba(226,241,247,.76)')}
     ${r(x + 8, y + 94, 144, 28, 'rgba(251,246,232,.92)')}
     ${text(x + 80, y + 113, '修好橋才過得去', 15, '#4a6b7a')}` : '';
+  const label = locked ? '在河的對岸，還過不去' : `第 ${level} 級${weedy ? '，長草了' : ''}`;
   return `<g class="plot ${selected ? 'selected' : ''} ${locked ? 'locked' : ''}" data-action="select-place" data-size="${size}" role="button" tabindex="0"
-      aria-label="${size} 的乘法，${place.name}，${locked ? '在河的對岸，還過不去' : `第 ${level} 級`}">
+      aria-label="${size} 的乘法，${place.name}，${label}">
     ${selected ? r(x - 4, y - 4, 168, 190, 'none', 'stroke="#fff" stroke-width="5" stroke-dasharray="14 8"') : ''}
-    ${parts.join('')}${nameplate}${stars}${fog}</g>`;
+    ${parts.join('')}${weedy ? weeds(x, y) : ''}${nameplate}${stars}${fog}</g>`;
 }
 
 // 小人在村莊裡站的位置：點哪個地方就走到那家門口。對岸還過不去時，只走到橋頭。
@@ -297,8 +309,8 @@ export function villageScene(state, selected, heroAt = VILLAGE_HOME) {
   segmentArt(second, 3, 268);
   bridge = `<g data-action="bridge" role="button" tabindex="0" aria-label="修橋" class="plot">${r(355, 210, 90, 100, 'transparent')}${bridge}
     ${first.flagged ? flag(452, 292) : ''}${second.flagged ? flag(452, 222) : ''}</g>`;
-  const plots = SIZES.map(size =>
-    building(size, state.levels[size], selected === size, !isUnlocked(state, size))).join('');
+  const plots = SIZES.map(size => building(size, state.levels[size], selected === size,
+    !isUnlocked(state, size), isWeedy(state, size))).join('');
   const walker = hero(0, 0, `class="hero walker" style="transform:translate(${heroAt.x}px,${heroAt.y}px)"`);
   return svg(800, 520, `${ground}${bridge}${plots}${walker}`, 'class="village-svg" role="group" aria-label="村莊地圖"');
 }

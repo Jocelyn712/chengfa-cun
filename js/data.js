@@ -82,5 +82,10 @@ export const VILLAGERS = {
 // 還沒熟的題目永遠給滿額，所以一直用線索的孩子也不會卡住。
 export const REWARD = { independent: 3, supported: 2, explored: 2, bridge: 3, repeat: 1 };
 
+// 🌿 長草：還在蓋的地點去過卻幾天沒回去，就會長草；回去幫一次忙就除草，多送木材。
+// 只處罰「開了頭卻不管」，不處罰已經蓋滿的地點，也不會扣東西。
+export const STALE_DAYS = 3;
+export const WEED_WOOD = 3;
+
 // 修橋：每排 6 格，第一段 2 排、第二段 3 排。
 export const BRIDGE = { width: 6, segments: [2, 3] };
