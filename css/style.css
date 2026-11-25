@@ -56,6 +56,9 @@ nav button[aria-current] { background: #dcebc4; }
 }
 .chip svg { width: 22px; height: 22px; }
 
+.foot { display: flex; justify-content: center; padding: 8px 16px max(20px, env(safe-area-inset-bottom)); }
+.foot button { border: 0; background: none; padding: 10px 14px; font-size: 14px; color: #8a8170; text-decoration: underline; }
+
 main { padding: 16px max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)); max-width: 1400px; margin: 0 auto; }
 
 /* ── 版面 */

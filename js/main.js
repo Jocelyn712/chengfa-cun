@@ -14,7 +14,9 @@ const villagerTotal = document.querySelector('#villager-count');
 const range = n => Array.from({ length: n }, (_, i) => i);
 
 let state = load();
-let route = { view: 'village' };
+// 家長頁有自己的網址（網址後面加 #parent），其他畫面都用原本的網址。
+const PARENT_HASH = '#parent';
+let route = { view: location.hash === PARENT_HASH ? 'parent' : 'village' };
 let walking = false;
 let freshPlanks = 0;
 let freshRow = -1;
@@ -39,8 +41,20 @@ function go(next, remember = false) {
   route = next;
   if (remember) state.active = next;
   render();
+  syncHash();
   window.scrollTo({ top: 0 });
 }
+
+function syncHash() {
+  const inParent = route.view === 'parent';
+  if (inParent === (location.hash === PARENT_HASH)) return;
+  history.replaceState(null, '', inParent ? PARENT_HASH : location.pathname + location.search);
+}
+
+window.addEventListener('hashchange', () => {
+  const wantParent = location.hash === PARENT_HASH;
+  if (wantParent !== (route.view === 'parent')) go({ view: wantParent ? 'parent' : 'village' });
+});
 
 const btn = (label, action, { attrs = '', cls = '' } = {}) =>
   `<button type="button" class="btn ${cls}" data-action="${action}" ${attrs}>${label}</button>`;
@@ -475,6 +489,7 @@ function walkAcross() {
 
 const actions = {
   village: () => go({ view: 'village' }),
+  parent: () => go({ view: 'parent' }),
   'village-place': el => go({ view: 'village', selected: Number(el.dataset.size) }),
   'select-place': el => go({ view: 'village', selected: Number(el.dataset.size) }),
   resume: () => {
@@ -603,23 +618,6 @@ document.addEventListener('keydown', event => {
     event.target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   }
 });
-
-// 長按左上角的標誌一秒，打開家長頁。
-const logo = document.querySelector('#logo');
-let pressTimer = null;
-logo.addEventListener('pointerdown', () => {
-  pressTimer = setTimeout(() => { pressTimer = null; go({ view: 'parent' }); }, 1000);
-});
-for (const type of ['pointerup', 'pointerleave', 'pointercancel']) {
-  logo.addEventListener(type, () => {
-    if (pressTimer) {
-      clearTimeout(pressTimer);
-      pressTimer = null;
-      if (type === 'pointerup') go({ view: 'village' });
-    }
-  });
-}
-logo.addEventListener('contextmenu', event => event.preventDefault());
 
 render();
 
