@@ -1,14 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BRIDGE, PLACES, SIZES, UPGRADE_COST } from '../js/data.js';
+import { ACROSS_SIZES, BRIDGE, PLACES, SIZES, UPGRADE_COST } from '../js/data.js';
 import {
-  allFacts, decodeBackup, eggReady, encodeBackup, factKey, freshState, isNewFact, knownBefore,
-  outcomeOf, placePlanks, product, recommend, record, repeatedSum, revive, segmentDone, upgrade,
+  allFacts, decodeBackup, earn, eggReady, encodeBackup, factKey, freshState, isMastered,
+  isNewFact, isUnlocked, knownBefore, outcomeOf, placePlanks, product, recommend, record,
+  repeatedSum, revive, rewardFor, segmentDone, stockOf, totalWood, upgrade, upgradeCost,
   villagerCount,
 } from '../js/model.js';
-import { bridgeScene, closedGroup, freeScene, openGroup, villageScene } from '../js/art.js';
+import {
+  bridgeScene, closedGroup, freeScene, openGroup, villageHeroPath, villageHeroStop, villageScene,
+} from '../js/art.js';
 
 const fixed = () => 0.5;
+
+// 大部分的測試都假設橋已經修好，對岸的 6～9 才進得去。
+function crossed() {
+  const state = freshState();
+  state.bridge.segments.forEach(segment => { segment.flagged = true; });
+  return state;
+}
 
 test('2～9 各乘 1～9，共 72 個算式，算式與總數一致', () => {
   const facts = allFacts();
@@ -72,7 +82,7 @@ test('作答結果：用了線索或答錯過，就不算自己答對', () => {
 });
 
 test('卡住的題目隔幾個動作或下次再出，不會馬上重問', () => {
-  const state = freshState();
+  const state = crossed();
   record(state, 7, 4, 'supported');
   const soon = recommend(state, fixed);
   assert.ok(!soon.some(f => f.size === 7 && f.count === 4), '剛做完不會馬上再出');
@@ -81,14 +91,14 @@ test('卡住的題目隔幾個動作或下次再出，不會馬上重問', () =>
   record(state, 4, 3, 'independent');
   assert.deepEqual(recommend(state, fixed)[0], { size: 7, count: 4 }, '隔三個動作後優先出');
 
-  const nextDay = revive(JSON.parse(JSON.stringify(freshState())));
+  const nextDay = revive(JSON.parse(JSON.stringify(crossed())));
   record(nextDay, 8, 6, 'skipped');
   const reopened = revive(JSON.parse(JSON.stringify(nextDay)));
   assert.deepEqual(recommend(reopened, fixed)[0], { size: 8, count: 6 }, '下次打開優先混入');
 });
 
 test('修完第二段橋後，稍後會在蛋盒遇到 6×3', () => {
-  const state = freshState();
+  const state = crossed();
   record(state, 6, 2, 'explored');
   record(state, 6, 3, 'supported');
   state.eggDue = { step: state.step, session: state.session };
@@ -99,14 +109,14 @@ test('修完第二段橋後，稍後會在蛋盒遇到 6×3', () => {
   assert.equal(eggReady(state), true);
   assert.deepEqual(recommend(state, fixed)[0], { size: 6, count: 3 });
 
-  const tomorrow = freshState();
+  const tomorrow = crossed();
   tomorrow.eggDue = { step: 0, session: 1 };
   tomorrow.session = 2;
   assert.equal(eggReady(tomorrow), true, '隔天打開也會出現');
 });
 
 test('每次推薦最多兩題，6～9 照順序帶新題，再用 2～5 複習', () => {
-  const state = freshState();
+  const state = crossed();
   const first = recommend(state, fixed);
   assert.equal(first.length, 2);
   assert.deepEqual(first[0], { size: 6, count: 2 });
@@ -114,10 +124,24 @@ test('每次推薦最多兩題，6～9 照順序帶新題，再用 2～5 複習'
   record(state, 6, 2, 'explored');
   assert.deepEqual(recommend(state, fixed)[0], { size: 6, count: 3 });
   const picks = new Set(Array.from({ length: 30 }, () => {
-    const pick = recommend(freshState())[1];
+    const pick = recommend(crossed())[1];
     return factKey(pick.size, pick.count);
   }));
   assert.ok(picks.size > 1, '2～5 的複習題不會每次都一樣');
+});
+
+test('橋修好才去得了對岸，在那之前小任務只出 2～5', () => {
+  const before = freshState();
+  for (const size of ACROSS_SIZES) assert.equal(isUnlocked(before, size), false);
+  for (const size of [2, 3, 4, 5]) assert.equal(isUnlocked(before, size), true);
+  for (let i = 0; i < 20; i++) {
+    const picks = recommend(freshState());
+    assert.equal(picks.length, 2, '橋還沒修好也要有兩題可以做');
+    assert.ok(picks.every(pick => pick.size <= 5), '對岸的題目不會出現');
+  }
+  const after = crossed();
+  for (const size of ACROSS_SIZES) assert.equal(isUnlocked(after, size), true);
+  assert.deepEqual(recommend(after, fixed)[0], { size: 6, count: 2 });
 });
 
 test('「用學過的」線索只在少一組的算式做過時出現', () => {
@@ -131,17 +155,72 @@ test('「用學過的」線索只在少一組的算式做過時出現', () => {
 test('木材升級地點，第三級有村民搬進來', () => {
   const state = freshState();
   assert.equal(upgrade(state, 6), false, '木材不夠不能升級');
-  state.wood = UPGRADE_COST.reduce((a, b) => a + b);
+  earn(state, 6, UPGRADE_COST.reduce((a, b) => a + b));
   for (let i = 0; i < UPGRADE_COST.length; i++) assert.equal(upgrade(state, 6), true);
-  assert.equal(state.wood, 0);
+  assert.equal(stockOf(state, 6), 0);
+  assert.equal(upgradeCost(state, 6), null);
   assert.equal(upgrade(state, 6), false, '最高級不能再升');
   assert.equal(villagerCount(state), 1);
+});
+
+test('木材分地點存：在鞋店賺的木材不能拿去蓋棋盤廣場', () => {
+  const state = freshState();
+  earn(state, 2, 30);
+  assert.equal(stockOf(state, 2), 30);
+  assert.equal(stockOf(state, 9), 0);
+  assert.equal(totalWood(state), 30);
+  assert.equal(upgrade(state, 9), false, '別的地點的木材用不到這裡');
+  assert.equal(upgrade(state, 2), true);
+  assert.equal(state.levels[9], 0);
+  assert.equal(state.levels[2], 1);
+});
+
+test('已經自己答對過的算式再做一次只給 1 塊，還沒熟的永遠給滿額', () => {
+  assert.equal(rewardFor('independent'), 3);
+  assert.equal(rewardFor('supported'), 2);
+  assert.equal(rewardFor('explored'), 2);
+  assert.equal(rewardFor('independent', true), 1, '複習熟題只給 1 塊');
+  assert.equal(rewardFor('supported', true), 1);
+  assert.equal(rewardFor('skipped'), 0);
+  assert.equal(rewardFor('skipped', true), 0, '跳過不給木材');
+
+  const state = freshState();
+  assert.equal(isMastered(state.records[factKey(2, 3)]), false);
+  record(state, 2, 3, 'supported');
+  assert.equal(isMastered(state.records[factKey(2, 3)]), false, '用線索完成還不算熟');
+  record(state, 2, 3, 'independent');
+  assert.equal(isMastered(state.records[factKey(2, 3)]), true);
+});
+
+test('全部蓋完要答對 56 題，而且八個乘法表都要練到', () => {
+  const state = crossed();
+  let answers = 0;
+  for (const size of SIZES) {
+    let count = 1;
+    while (state.levels[size] < UPGRADE_COST.length) {
+      const repeat = isMastered(state.records[factKey(size, count)]);
+      record(state, size, count, 'independent');
+      earn(state, size, rewardFor('independent', repeat));
+      answers++;
+      while (upgrade(state, size));
+      count = count % 9 + 1;
+      assert.ok(answers < 200, '不能無限刷下去');
+    }
+  }
+  assert.equal(villagerCount(state), SIZES.length);
+  assert.equal(answers, 56);
+  // 每個地點都要在自己那裡練到 7 題，不能靠別的乘法表的木材蓋完。
+  for (const size of SIZES) {
+    const done = allFacts().filter(fact => fact.size === size &&
+      state.records[factKey(fact.size, fact.count)]).length;
+    assert.equal(done, 7);
+  }
 });
 
 test('備份碼可以還原，包含中文與進度', () => {
   const state = freshState();
   record(state, 7, 3, 'supported');
-  state.wood = 9;
+  earn(state, 7, 9);
   state.bridge.segments[0].flagged = true;
   const restored = decodeBackup(encodeBackup(state));
   assert.deepEqual(restored, JSON.parse(JSON.stringify(state)));
@@ -151,22 +230,77 @@ test('備份碼可以還原，包含中文與進度', () => {
 
 test('重新打開時保留進度並補上新欄位', () => {
   const saved = JSON.parse(JSON.stringify(freshState()));
-  saved.wood = 5;
+  earn(saved, 4, 5);
   delete saved.free;
   const state = revive(saved);
-  assert.equal(state.wood, 5);
+  assert.equal(stockOf(state, 4), 5);
   assert.equal(state.session, 2);
   assert.deepEqual(state.free, { size: 6, rows: 1 });
   assert.equal(revive({ version: 99 }), null);
+});
+
+test('舊存檔（共用一堆木材）會平均分給八個地點', () => {
+  const old = {
+    version: 1, session: 3, step: 7, wood: 20,
+    levels: { 2: 2, 3: 1, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0 },
+    bridge: freshState().bridge,
+    records: { '2×3': { independent: 1, supported: 0, explored: 0, skipped: 0, last: 'independent', step: 1, session: 1 } },
+  };
+  const state = revive(old);
+  assert.equal(state.version, 2);
+  assert.equal(state.wood, undefined, '不再有共用的那一堆');
+  for (const size of SIZES) assert.equal(stockOf(state, size), 2, '20 塊分給八個地點，每個 2 塊');
+  assert.equal(state.levels[2], 2, '蓋好的進度留著');
+  assert.equal(state.session, 4);
+  assert.ok(state.records['2×3'], '學習紀錄留著');
+  assert.ok(decodeBackup(encodeBackup(state)), '轉過來的存檔也能備份');
 });
 
 test('地圖都畫得出來', () => {
   const state = freshState();
   assert.match(villageScene(state, 6), /data-action="select-place" data-size="6"/);
   assert.match(bridgeScene(state.bridge, { segment: 0 }), /class="hero"/);
+  for (const size of ACROSS_SIZES) {
+    assert.match(villageScene(state, size), /修好橋才過得去/, '橋沒修好，對岸蓋著霧');
+  }
+  assert.doesNotMatch(villageScene(crossed(), 6), /修好橋才過得去/, '過橋後霧散開');
+
   for (let size = 2; size <= 9; size++) {
     for (let rows = 1; rows <= 9; rows++) {
       assert.match(freeScene(size, rows, -1), new RegExp(`一共 ${size * rows} 塊木板`));
     }
   }
+});
+
+test('村莊的小人會走到點的地點，對岸還過不去就只走到橋頭', () => {
+  const state = freshState();
+  const home = villageHeroStop(state, null);
+  const stops = new Set();
+  for (const size of [2, 3, 4, 5]) {
+    const stop = villageHeroStop(state, size);
+    assert.notDeepEqual(stop, home, `點了${PLACES[size].name}，小人要走過去`);
+    stops.add(`${stop.x},${stop.y}`);
+  }
+  assert.equal(stops.size, 4, '每個地點站的位置都不一樣');
+  const foot = villageHeroStop(state, 6);
+  for (const size of ACROSS_SIZES) {
+    assert.deepEqual(villageHeroStop(state, size), foot, '對岸的地點都只走到橋頭');
+  }
+  const after = crossed();
+  assert.notDeepEqual(villageHeroStop(after, 6), foot, '過橋後就走得到雞舍');
+});
+
+test('要去對岸的小人會先走到橋頭，從橋上過河', () => {
+  const state = crossed();
+  const shop = villageHeroStop(state, 2);
+  const coop = villageHeroStop(state, 6);
+  assert.deepEqual(villageHeroPath(shop, villageHeroStop(state, 5)), [villageHeroStop(state, 5)],
+    '同一岸直接走過去');
+  const over = villageHeroPath(shop, coop);
+  assert.equal(over.length, 3, '過河要先上橋再下橋');
+  assert.deepEqual(over[2], coop);
+  assert.ok(over[0].y > over[1].y, '先走到這岸的橋頭，再往對岸');
+  const back = villageHeroPath(coop, shop);
+  assert.ok(back[0].y < back[1].y, '回來的方向相反');
+  assert.deepEqual(back[2], shop);
 });

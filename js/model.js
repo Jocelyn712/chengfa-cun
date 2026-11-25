@@ -1,7 +1,11 @@
-import { BRIDGE, MAX_LEVEL, NEW_SIZES, REWARD, SIZES, UPGRADE_COST } from './data.js';
+import {
+  ACROSS_SIZES, BRIDGE, MAX_LEVEL, NEW_SIZES, REWARD, SIZES, UPGRADE_COST,
+} from './data.js';
 
 export const STORAGE_KEY = 'kaimath-village-v1';
 const BACKUP_PREFIX = 'KAIMATH1:';
+// 2：木材改成分地點存（舊存檔會自動轉過來）。
+export const VERSION = 2;
 
 export const factKey = (size, count) => `${size}×${count}`;
 export const product = (size, count) => `${size}×${count}＝${size * count}`;
@@ -11,12 +15,18 @@ export const repeatedSum = (size, count) =>
 export const allFacts = () =>
   SIZES.flatMap(size => Array.from({ length: 9 }, (_, i) => ({ size, count: i + 1 })));
 
+// 走到對岸了沒。對岸的 6～9 要過橋才去得了。
+export const crossedRiver = state => Boolean(state.bridge.segments[1].flagged);
+export const isUnlocked = (state, size) =>
+  !ACROSS_SIZES.includes(size) || crossedRiver(state);
+
 export function freshState() {
   return {
-    version: 1,
+    version: VERSION,
     session: 1,
     step: 0,
-    wood: 0,
+    // 木材分地點存：在鞋店幫忙拿到的木材，只能拿來蓋鞋店。
+    stock: Object.fromEntries(SIZES.map(size => [size, 0])),
     levels: Object.fromEntries(SIZES.map(size => [size, 0])),
     bridge: {
       position: 0, // 0 起點、1 小島、2 對岸
@@ -36,10 +46,17 @@ export function freshState() {
 
 // 讀進舊存檔時補上缺的欄位，並把這次開啟算成新的一回。
 export function revive(saved) {
-  if (!saved || saved.version !== 1) return null;
+  if (!saved || (saved.version !== 1 && saved.version !== VERSION)) return null;
   const base = freshState();
-  const state = { ...base, ...saved };
+  const state = { ...base, ...saved, version: VERSION };
   state.levels = { ...base.levels, ...saved.levels };
+  state.stock = { ...base.stock, ...saved.stock };
+  // 版本 1 的木材是共用的一堆，平均分給八個地點。
+  if (saved.version === 1) {
+    const each = Math.floor((saved.wood ?? 0) / SIZES.length);
+    for (const size of SIZES) state.stock[size] = each;
+  }
+  delete state.wood;
   state.session = (saved.session ?? 0) + 1;
   return state;
 }
@@ -88,7 +105,8 @@ export function recommend(state, random = Math.random) {
   const queue = [];
   const has = fact => queue.some(pick => pick.size === fact.size && pick.count === fact.count);
   const add = fact => { if (fact && queue.length < 2 && !has(fact)) queue.push(fact); };
-  const facts = allFacts();
+  // 橋還沒修好，就只出這岸的 2～5。
+  const facts = allFacts().filter(fact => isUnlocked(state, fact.size));
   const entryOf = fact => state.records[factKey(fact.size, fact.count)];
 
   if (eggReady(state)) add({ size: 6, count: 3 });
@@ -97,18 +115,23 @@ export function recommend(state, random = Math.random) {
     .sort((a, b) => entryOf(a).step - entryOf(b).step);
   add(due[0]);
 
-  const learningOrder = NEW_SIZES.flatMap(size =>
-    [2, 3, 4, 5, 6, 7, 8, 9, 1].map(count => ({ size, count })));
-  add(learningOrder.find(fact => isNewFact(state, fact.size, fact.count)));
-
-  if (queue.length < 2) {
-    // 先打散再排序，分數一樣的（例如都還沒練過）就隨機挑，不會老是從 2×2 開始。
-    const review = facts.filter(fact => fact.size <= 5 && fact.count > 1 && !has(fact))
-      .map(fact => ({ fact, order: random() }))
-      .sort((a, b) => reviewScore(entryOf(a.fact)) - reviewScore(entryOf(b.fact)) || a.order - b.order);
-    add(review[0]?.fact);
+  if (crossedRiver(state)) {
+    const learningOrder = NEW_SIZES.flatMap(size =>
+      [2, 3, 4, 5, 6, 7, 8, 9, 1].map(count => ({ size, count })));
+    add(learningOrder.find(fact => isNewFact(state, fact.size, fact.count)));
   }
+
+  // 先打散再排序，分數一樣的（例如都還沒練過）就隨機挑，不會老是從 2×2 開始。
+  const review = facts.filter(fact => fact.size <= 5 && fact.count > 1)
+    .map(fact => ({ fact, order: random() }))
+    .sort((a, b) => reviewScore(entryOf(a.fact)) - reviewScore(entryOf(b.fact)) || a.order - b.order);
+  if (queue.length < 2) add(review[0]?.fact);
   add(due[1]);
+  // 還沒湊滿兩題就再補複習題（橋還沒修好時，可以出的題目本來就比較少）。
+  for (const item of review) {
+    if (queue.length >= 2) break;
+    add(item.fact);
+  }
   return queue;
 }
 
@@ -122,12 +145,19 @@ export function outcomeOf(mission) {
   return mission.hint > 0 || mission.missed ? 'supported' : 'independent';
 }
 
-export function earn(state, amount) {
-  state.wood += amount;
+// 木材堆在幫忙的那個地點旁邊。
+export function earn(state, size, amount) {
+  state.stock[size] = (state.stock[size] ?? 0) + amount;
   return amount;
 }
 
-export const rewardFor = outcome => REWARD[outcome] ?? 0;
+export const stockOf = (state, size) => state.stock[size] ?? 0;
+export const totalWood = state =>
+  SIZES.reduce((sum, size) => sum + stockOf(state, size), 0);
+
+// 已經自己答對過的算式再做一次，木材會變少，才不會一直刷最簡單的題目。
+export const rewardFor = (outcome, repeat = false) =>
+  (repeat && outcome !== 'skipped' ? REWARD.repeat : REWARD[outcome]) ?? 0;
 
 export function upgradeCost(state, size) {
   const level = state.levels[size];
@@ -136,8 +166,8 @@ export function upgradeCost(state, size) {
 
 export function upgrade(state, size) {
   const cost = upgradeCost(state, size);
-  if (cost === null || state.wood < cost) return false;
-  state.wood -= cost;
+  if (cost === null || stockOf(state, size) < cost) return false;
+  state.stock[size] -= cost;
   state.levels[size]++;
   return true;
 }
@@ -171,7 +201,7 @@ export function decodeBackup(code) {
     const binary = atob(text.slice(BACKUP_PREFIX.length));
     const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
     const saved = JSON.parse(new TextDecoder().decode(bytes));
-    return saved?.version === 1 ? saved : null;
+    return saved?.version === 1 || saved?.version === VERSION ? saved : null;
   } catch {
     return null;
   }

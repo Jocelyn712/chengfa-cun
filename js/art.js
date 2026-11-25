@@ -1,5 +1,5 @@
 import { BRIDGE, MAX_LEVEL, PLACES, SIZES } from './data.js';
-import { segmentDone } from './model.js';
+import { isUnlocked, segmentDone } from './model.js';
 
 // 全部用方塊（rect）畫，維持麥塊風的像素感。
 const r = (x, y, w, h, fill, extra = '') =>
@@ -207,7 +207,7 @@ const PLOTS = {
   2: [20, 318], 3: [190, 318], 4: [450, 318], 5: [620, 318],
 };
 
-function building(size, level, selected) {
+function building(size, level, selected, locked = false) {
   const place = PLACES[size];
   const [x, y] = PLOTS[size];
   const parts = [];
@@ -238,13 +238,37 @@ function building(size, level, selected) {
   }
   const nameplate = `${r(x, y - 6, 120, 26, 'rgba(251,246,232,.95)')}${text(x + 60, y + 13, `${size} ${place.name}`, size === 3 ? 14 : 17, '#3d2a17')}`;
   const stars = range(MAX_LEVEL).map(i => r(x + 52 + i * 20, y + 172, 14, 8, i < level ? '#f2c14e' : 'rgba(0,0,0,.18)')).join('');
-  return `<g class="plot ${selected ? 'selected' : ''}" data-action="select-place" data-size="${size}" role="button" tabindex="0"
-      aria-label="${size} 的乘法，${place.name}，第 ${level} 級">
+  // 對岸還過不去的時候，蓋一層霧，只看得到輪廓。
+  const fog = locked ? `${r(x - 4, y - 12, 168, 202, 'rgba(226,241,247,.76)')}
+    ${r(x + 8, y + 94, 144, 28, 'rgba(251,246,232,.92)')}
+    ${text(x + 80, y + 113, '修好橋才過得去', 15, '#4a6b7a')}` : '';
+  return `<g class="plot ${selected ? 'selected' : ''} ${locked ? 'locked' : ''}" data-action="select-place" data-size="${size}" role="button" tabindex="0"
+      aria-label="${size} 的乘法，${place.name}，${locked ? '在河的對岸，還過不去' : `第 ${level} 級`}">
     ${selected ? r(x - 4, y - 4, 168, 190, 'none', 'stroke="#fff" stroke-width="5" stroke-dasharray="14 8"') : ''}
-    ${parts.join('')}${nameplate}${stars}</g>`;
+    ${parts.join('')}${nameplate}${stars}${fog}</g>`;
 }
 
-export function villageScene(state, selected) {
+// 小人在村莊裡站的位置：點哪個地方就走到那家門口。對岸還過不去時，只走到橋頭。
+const VILLAGE_HOME = { x: 400, y: 470 };
+const BRIDGE_FOOT = { x: 400, y: 334 };
+const BRIDGE_TOP = { x: 400, y: 206 };
+// 這條線以上是對岸，要過河就得走橋。
+const RIVER_Y = 310;
+
+export function villageHeroStop(state, selected) {
+  if (!selected || !PLOTS[selected]) return VILLAGE_HOME;
+  if (!isUnlocked(state, selected)) return BRIDGE_FOOT;
+  const [x, y] = PLOTS[selected];
+  return { x: x + 80, y: y + 134 };
+}
+
+// 要去對岸就先走到橋頭，再從橋上過去，不會直接從水面上穿過去。
+export function villageHeroPath(from, to) {
+  if ((from.y > RIVER_Y) === (to.y > RIVER_Y)) return [to];
+  return from.y > RIVER_Y ? [BRIDGE_FOOT, BRIDGE_TOP, to] : [BRIDGE_TOP, BRIDGE_FOOT, to];
+}
+
+export function villageScene(state, selected, heroAt = VILLAGE_HOME) {
   let ground = '';
   for (let y = 0; y < 26; y++) {
     for (let x = 0; x < 40; x++) {
@@ -273,6 +297,8 @@ export function villageScene(state, selected) {
   segmentArt(second, 3, 268);
   bridge = `<g data-action="bridge" role="button" tabindex="0" aria-label="修橋" class="plot">${r(355, 210, 90, 100, 'transparent')}${bridge}
     ${first.flagged ? flag(452, 292) : ''}${second.flagged ? flag(452, 222) : ''}</g>`;
-  const plots = SIZES.map(size => building(size, state.levels[size], selected === size)).join('');
-  return svg(800, 520, `${ground}${bridge}${plots}${hero(400, 470)}`, 'class="village-svg" role="group" aria-label="村莊地圖"');
+  const plots = SIZES.map(size =>
+    building(size, state.levels[size], selected === size, !isUnlocked(state, size))).join('');
+  const walker = hero(0, 0, `class="hero walker" style="transform:translate(${heroAt.x}px,${heroAt.y}px)"`);
+  return svg(800, 520, `${ground}${bridge}${plots}${walker}`, 'class="village-svg" role="group" aria-label="村莊地圖"');
 }

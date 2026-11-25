@@ -59,10 +59,18 @@ export const PLACES = {
 };
 
 export const SIZES = [2, 3, 4, 5, 6, 7, 8, 9];
-export const NEW_SIZES = [6, 7, 8, 9];
+
+// 對岸的地點：橋修好、走過去才進得去。也是第一次遇到要先動手打開看的那幾個。
+export const ACROSS_SIZES = [6, 7, 8, 9];
+export const NEW_SIZES = ACROSS_SIZES;
+
+// 修橋多的木板堆在對岸的雞舍旁邊，過橋就能用。
+export const BRIDGE_STOCK_SIZE = 6;
 
 // 地點升級：第 1、2、3 級各要幾塊木材。第 3 級會有村民搬進來。
-export const UPGRADE_COST = [3, 6, 9];
+// 木材分地點存，所以這是「在這個地點幫忙賺到的木材」，一共 21 塊。
+// 每個地點有 9 個算式，第一次自己答對給 3 塊，所以大約要 7 題才蓋得完。
+export const UPGRADE_COST = [3, 6, 12];
 export const MAX_LEVEL = UPGRADE_COST.length;
 
 export const VILLAGERS = {
@@ -70,7 +78,9 @@ export const VILLAGERS = {
   6: '養雞的蛋蛋', 7: '活動的週週', 8: '章魚阿八', 9: '棋王九九',
 };
 
-export const REWARD = { independent: 3, supported: 2, explored: 2, bridge: 3 };
+// 幫忙拿到的木材。已經自己答對過的算式再做一次只給 repeat，才不會一直刷同一題。
+// 還沒熟的題目永遠給滿額，所以一直用線索的孩子也不會卡住。
+export const REWARD = { independent: 3, supported: 2, explored: 2, bridge: 3, repeat: 1 };
 
 // 修橋：每排 6 格，第一段 2 排、第二段 3 排。
 export const BRIDGE = { width: 6, segments: [2, 3] };

@@ -1,17 +1,22 @@
-import { BRIDGE, MAX_LEVEL, PLACES, SIZES, VILLAGERS } from './data.js';
 import {
-  STORAGE_KEY, allFacts, decodeBackup, earn, encodeBackup, factKey, freshState, isMastered,
-  isNewFact, knownBefore, outcomeOf, placePlanks, product, recommend, record, repeatedSum,
-  revive, rewardFor, segmentDone, upgrade, upgradeCost, villagerCount,
+  ACROSS_SIZES, BRIDGE, BRIDGE_STOCK_SIZE, MAX_LEVEL, PLACES, SIZES, UPGRADE_COST, VILLAGERS,
+} from './data.js';
+import {
+  STORAGE_KEY, allFacts, decodeBackup, earn, encodeBackup, factKey, freshState,
+  isMastered, isNewFact, isUnlocked, knownBefore, outcomeOf, placePlanks, product, recommend,
+  record, repeatedSum, revive, rewardFor, segmentDone, stockOf, totalWood, upgrade, upgradeCost,
+  villagerCount,
 } from './model.js';
 import {
-  bridgeScene, closedGroup, freeScene, heroTransform, openGroup, propIcon, villageScene, woodIcon,
+  bridgeScene, closedGroup, freeScene, heroTransform, openGroup, propIcon, villageHeroPath,
+  villageHeroStop, villageScene, woodIcon,
 } from './art.js';
 
 const app = document.querySelector('#app');
 const woodCount = document.querySelector('#wood-count');
 const villagerTotal = document.querySelector('#villager-count');
 const range = n => Array.from({ length: n }, (_, i) => i);
+const ACROSS_NAMES = ACROSS_SIZES.map(size => PLACES[size].name).join('、');
 
 let state = load();
 // 家長頁有自己的網址（網址後面加 #parent），其他畫面都用原本的網址。
@@ -20,6 +25,9 @@ let route = { view: location.hash === PARENT_HASH ? 'parent' : 'village' };
 let walking = false;
 let freshPlanks = 0;
 let freshRow = -1;
+// 村莊裡的小人現在站在哪，換畫面時從這裡走過去。
+let heroSpot = villageHeroStop(state, null);
+let walkTimer = null;
 
 function load() {
   try {
@@ -100,7 +108,8 @@ function welcomePanel() {
   const bridgeDone = state.bridge.segments.every(s => s.flagged);
   return `<div class="panel">
     <h1>乘法村</h1>
-    <p>幫村民做事，就能拿到木材，把村莊蓋起來。點地圖上的地方看看！</p>
+    <p>幫村民做事，就能拿到木材。在哪裡幫忙，木材就堆在哪裡，用來蓋那個地方。</p>
+    ${bridgeDone ? '' : '<p class="soft">對岸的四個地方還過不去，要先把橋修好。</p>'}
     <div class="stack">
       ${resume ? btn(`繼續：${resume}`, 'resume', { cls: 'primary big' }) : ''}
       ${bridgeDone ? '' : btn('去修橋', 'bridge', { cls: resume ? 'big' : 'primary big' })}
@@ -110,23 +119,45 @@ function welcomePanel() {
   </div>${villagersPanel()}`;
 }
 
+function placeHead(size) {
+  const place = PLACES[size];
+  return `<div class="place-head">
+    <span class="place-icon"><svg viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true">${propIcon(place.kind)}</svg></span>
+    <div><small>${size} 的乘法</small><h2>${place.name}</h2></div>
+  </div>`;
+}
+
+// 對岸的地點：橋還沒修好就只看得到霧裡的輪廓。
+function lockedPanel(size) {
+  const place = PLACES[size];
+  return `<div class="panel place locked" style="--c:${place.color}">
+    ${placeHead(size)}
+    <p class="tag">在河的對岸</p>
+    <p>${place.name}在對岸，現在還過不去。把橋修好、走過去，才能來這裡幫忙。</p>
+    <div class="stack">
+      ${btn('去修橋', 'bridge', { cls: 'primary big' })}
+      ${btn('回村莊', 'village', { cls: 'quiet' })}
+    </div>
+  </div>`;
+}
+
 function placePanel(size) {
+  if (!isUnlocked(state, size)) return lockedPanel(size);
   const place = PLACES[size];
   const level = state.levels[size];
   const cost = upgradeCost(state, size);
+  const have = stockOf(state, size);
   const stars = range(MAX_LEVEL).map(i => `<i class="${i < level ? 'on' : ''}"></i>`).join('');
   return `<div class="panel place" style="--c:${place.color}">
-    <div class="place-head">
-      <span class="place-icon"><svg viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true">${propIcon(place.kind)}</svg></span>
-      <div><small>${size} 的乘法</small><h2>${place.name}</h2></div>
-    </div>
+    ${placeHead(size)}
     <p>${place.each}。</p>
     <div class="stars" aria-label="第 ${level} 級">${stars}</div>
+    <p class="stock">${place.name}的木材 ${wood(have)}</p>
     <div class="stack">
       ${btn('幫忙', 'pick', { cls: 'primary big', attrs: `data-size="${size}"` })}
       ${cost === null ? `<p class="happy">${VILLAGERS[size]}搬進來了！</p>` :
-        `${btn(`升級 ${wood(cost)}`, 'upgrade', { cls: 'big', attrs: `data-size="${size}" ${state.wood < cost ? 'disabled' : ''}` })}
-         ${state.wood < cost ? `<p class="soft">還差 ${cost - state.wood} 塊木材，幫村民做事就能拿到。</p>` :
+        `${btn(`升級 ${wood(cost)}`, 'upgrade', { cls: 'big', attrs: `data-size="${size}" ${have < cost ? 'disabled' : ''}` })}
+         ${have < cost ? `<p class="soft">還差 ${cost - have} 塊。在${place.name}幫忙才會拿到${place.name}的木材。</p>` :
            level === MAX_LEVEL - 1 ? `<p class="soft">再升一級，${VILLAGERS[size]}就會搬進來！</p>` : ''}`}
       ${btn('回村莊', 'village', { cls: 'quiet' })}
     </div>
@@ -135,7 +166,7 @@ function placePanel(size) {
 
 function villageView() {
   return `<div class="layout village">
-    <section class="map">${villageScene(state, route.selected)}</section>
+    <section class="map">${villageScene(state, route.selected, heroSpot)}</section>
     <aside class="side">${route.selected ? placePanel(route.selected) : welcomePanel()}</aside>
   </div>`;
 }
@@ -159,11 +190,13 @@ function bridgePanel(index) {
   }
   const segment = state.bridge.segments[index];
   if (route.celebrate === index) {
+    const planks = `<p class="reward">多的 ${wood(rewardFor('bridge'))} 木板，堆到對岸的${PLACES[BRIDGE_STOCK_SIZE].name}旁邊</p>`;
     return index === 0 ?
-      `<div class="panel"><h2>插好旗子了！</h2><p class="reward">拿到 ${wood(rewardFor('bridge'))} 木材</p>
+      `<div class="panel"><h2>插好旗子了！</h2>${planks}
         <p>前面還有一段更寬的河。</p>${btn('修下一段', 'bridge-next', { cls: 'primary big' })}</div>` :
-      `<div class="panel"><h2>走到對岸了！</h2><p class="reward">拿到 ${wood(rewardFor('bridge'))} 木材</p>
-        <p>對岸的村民聽說你很會算 6，說不定會來找你幫忙喔。</p>
+      `<div class="panel"><h2>走到對岸了！</h2>${planks}
+        <p class="happy">對岸的${ACROSS_NAMES}都可以去了！</p>
+        <p>剛才堆在${PLACES[BRIDGE_STOCK_SIZE].name}旁邊的木材，夠蓋第一級。先去${PLACES[BRIDGE_STOCK_SIZE].name}幫忙看看。</p>
         <div class="stack">${btn('今日小任務', 'today', { cls: 'primary big' })}${btn('回村莊蓋房子', 'village', { cls: 'big' })}${btn('自由蓋橋', 'free', { cls: 'big' })}</div></div>`;
   }
   if (segmentDone(segment)) {
@@ -295,8 +328,9 @@ function workPanel(size, count, mission) {
       btn('再幫一次', 'pick', { cls: 'primary big', attrs: `data-size="${size}"` });
     return `<div class="panel">${tag}<h2>${place.done}</h2>
       ${equation(size, count)}${eggLink}
-      <p class="reward">拿到 ${wood(mission.reward)} 木材</p>
-      ${cost !== null && state.wood >= cost ? `<p class="soft">木材夠了，可以去升級${place.name}！</p>` : ''}
+      <p class="reward">${place.name}拿到 ${wood(mission.reward)} 木材</p>
+      ${mission.repeat ? `<p class="soft">這題已經很熟了，再做一次拿 1 塊。想多拿一點，可以挑還沒練過的。</p>` : ''}
+      ${cost !== null && stockOf(state, size) >= cost ? `<p class="soft">木材夠了，可以去升級${place.name}！</p>` : ''}
       <div class="stack">${next}${btn('回村莊', 'village-place', { cls: 'big', attrs: `data-size="${size}"` })}</div></div>`;
   }
   if (mission.phase === 'ready') {
@@ -332,11 +366,22 @@ function missionView() {
   </div>`;
 }
 
+// 哪些地點的木材已經夠升下一級了。
+function readyToUpgrade() {
+  return SIZES.filter(size => {
+    const cost = upgradeCost(state, size);
+    return isUnlocked(state, size) && cost !== null && stockOf(state, size) >= cost;
+  });
+}
+
 function todayDoneView() {
   const done = state.today?.done ?? 0;
   return `<div class="narrow"><div class="panel">
     <h2>${done ? `今天幫了 ${done} 個忙！` : '今天先休息也很好。'}</h2>
-    <p>木材有 ${wood(state.wood)}，可以回村莊蓋房子。</p>
+    <p>村莊一共有 ${wood(totalWood(state))}。</p>
+    ${readyToUpgrade().length ?
+      `<p class="happy">${readyToUpgrade().map(size => PLACES[size].name).join('、')}的木材夠升級了！</p>` :
+      '<p class="soft">木材堆在幫忙過的地方，回村莊點點看。</p>'}
     <div class="stack">${btn('回村莊', 'village', { cls: 'primary big' })}${btn('再一題', 'today-more', { cls: 'big' })}</div>
   </div></div>`;
 }
@@ -384,9 +429,13 @@ function parentView() {
       <h3>之後每天：今日小任務 → 回村莊蓋房子</h3>
       <ol class="rules">
         <li>按「今日小任務」，系統會挑兩題。系統會記得孩子卡住的題目，隔一段時間再出；也會照順序帶 6、7、8、9 的新題。</li>
-        <li>做完任務會拿到木材。</li>
-        <li>回到村莊，用木材升級地點。每個地點升到第 3 級，就會有一位村民搬進來，一共 8 位。</li>
+        <li>做完任務會拿到木材。<b>木材分地點存</b>：在鞋店幫忙拿到的木材只能蓋鞋店，所以每個乘法表都要練到。</li>
+        <li>回到村莊，用木材升級地點。每級要 ${UPGRADE_COST.join('、')} 塊，一個地點蓋滿要 ${UPGRADE_COST.reduce((a, b) => a + b)} 塊。第 3 級會有一位村民搬進來，一共 8 位。</li>
+        <li>第一次自己答對一個算式給 3 塊，用線索或答錯後完成給 2 塊。<b>已經自己答對過的算式再做一次只給 1 塊</b>，所以沒辦法一直刷同一題蓋完村莊；還沒熟的題目永遠給滿額，不會卡住。</li>
+        <li>全部蓋完大約要答對 56 題，平均每個地點 7 題。</li>
       </ol>
+      <h3>對岸的 6、7、8、9</h3>
+      <p>雞舍、活動中心、章魚池、棋盤廣場在河對岸，<b>橋修好、走過去才進得去</b>，在那之前小任務也只會出 2～5。走過橋的時候，多的木板會堆在雞舍旁邊，剛好夠蓋第一級。</p>
       <h3>卡住的時候</h3>
       <ul class="rules">
         <li>每題都有線索，會一層一層打開，但不會直接給答案。</li>
@@ -429,6 +478,21 @@ function parentView() {
   </div>`;
 }
 
+// 村莊的小人：先用原本的位置畫出來，插進畫面後再一段一段走到新位置。
+function walkInVillage() {
+  clearTimeout(walkTimer);
+  if (route.view !== 'village') return;
+  const walker = app.querySelector('.walker');
+  const path = villageHeroPath(heroSpot, villageHeroStop(state, route.selected));
+  heroSpot = path[path.length - 1];
+  if (!walker) return;
+  const step = i => {
+    walker.style.transform = `translate(${path[i].x}px,${path[i].y}px)`;
+    if (i + 1 < path.length) walkTimer = setTimeout(() => step(i + 1), 420);
+  };
+  requestAnimationFrame(() => step(0));
+}
+
 function render() {
   const views = {
     village: villageView, bridge: bridgeView, free: freeView, pick: pickView,
@@ -436,8 +500,9 @@ function render() {
   };
   app.innerHTML = views[route.view]();
   app.dataset.view = route.view;
-  woodCount.textContent = state.wood;
+  woodCount.textContent = totalWood(state);
   villagerTotal.textContent = villagerCount(state);
+  walkInVillage();
   for (const nav of document.querySelectorAll('[data-nav]')) {
     const current = route.view === 'mission' ? (route.today ? 'mission' : 'village') :
       route.view === 'free' ? 'bridge' : route.view;
@@ -478,6 +543,8 @@ function openToday(more = false) {
 
 function finishMission(mission, outcome) {
   const { size, count } = route;
+  // 這題之前就已經自己答對過的話，這次只算複習，木材會變少。
+  const repeat = isMastered(state.records[factKey(size, count)]);
   record(state, size, count, outcome);
   if (size === 6 && count === 3) state.eggDue = null;
   if (route.today) {
@@ -494,7 +561,8 @@ function finishMission(mission, outcome) {
     return go({ view: 'village', selected: size });
   }
   mission.phase = 'done';
-  mission.reward = earn(state, rewardFor(outcome));
+  mission.repeat = repeat;
+  mission.reward = earn(state, size, rewardFor(outcome, repeat));
   state.active = null;
   render();
 }
@@ -525,7 +593,8 @@ function walkAcross() {
     walking = false;
     segment.flagged = true;
     state.bridge.position = index + 1;
-    earn(state, rewardFor('bridge'));
+    // 修橋多的木板堆在對岸的雞舍旁邊，過橋就用得到。
+    earn(state, BRIDGE_STOCK_SIZE, rewardFor('bridge'));
     if (index === 0) record(state, BRIDGE.width, segment.rows, 'explored');
     else {
       record(state, BRIDGE.width, segment.rows, segment.hint || segment.missed ? 'supported' : 'independent');
@@ -551,7 +620,11 @@ const actions = {
   today: () => openToday(),
   'today-more': () => openToday(true),
   'today-done': () => go({ view: 'today-done' }),
-  pick: el => go({ view: 'pick', size: Number(el.dataset.size) }),
+  pick: el => {
+    const size = Number(el.dataset.size);
+    if (!isUnlocked(state, size)) return go({ view: 'village', selected: size });
+    go({ view: 'pick', size });
+  },
   start: el => startMission(route.size, Number(el.dataset.count)),
   'start-auto': () => startMission(route.size, autoCount(route.size)),
   upgrade: el => {

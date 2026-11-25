@@ -139,6 +139,9 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 32px max(16px, env(sa
 .stars { display: flex; gap: 8px; }
 .stars i { width: 34px; height: 16px; background: #ddd5c2; border: 2px solid var(--line); }
 .stars i.on { background: var(--gold); }
+.stock { font-size: 19px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.stock .wood-icon { width: 26px; height: 26px; }
+.place.locked { border-top-color: #8aa6b4; filter: saturate(.7); }
 .villagers { padding: 16px 20px; background: var(--paper); border: 4px solid var(--line); border-radius: 14px; display: grid; gap: 10px; }
 .villagers h3 { font-size: 18px; }
 .villager-row { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
@@ -149,6 +152,9 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 32px max(16px, env(sa
 
 /* ── 修橋 */
 .hero { transition: transform 1.4s ease-in-out; }
+/* 村莊裡的小人走路比較短，橋上那段慢慢走。 */
+.walker { transition-duration: .42s; }
+.plot.locked { cursor: pointer; }
 .drop { animation: drop .45s ease-out both; }
 .blink { animation: blink 1.1s ease-in-out infinite; }
 .tap-row { cursor: pointer; }
