@@ -170,7 +170,9 @@ function reviewScore(entry) {
 }
 
 export function outcomeOf(mission) {
-  return mission.hint > 0 || mission.missed ? 'supported' : 'independent';
+  if (mission.hint > 0 || mission.missed) return 'supported';
+  // 第一次遇到的題目，打開箱子數出來的算「動手看過」；沒打開就答對的才算自己答對。
+  return mission.mode === 'explore' && mission.opened > 0 ? 'explored' : 'independent';
 }
 
 // 木材堆在幫忙的那個地點旁邊。

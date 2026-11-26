@@ -1,5 +1,5 @@
-import { BRIDGE, MAX_LEVEL, PLACES, SIZES } from './data.js';
-import { isUnlocked, isWeedy, segmentDone } from './model.js';
+import { BRIDGE, MAX_LEVEL, PLACES, SIZES, VILLAGERS } from './data.js';
+import { isUnlocked, isWeedy, segmentDone, villagerCount } from './model.js';
 
 // 全部用方塊（rect）畫，維持麥塊風的像素感。
 const r = (x, y, w, h, fill, extra = '') =>
@@ -27,6 +27,73 @@ export function hero(x, y, extra = '', shirt = '#e2574c') {
     ${r(-7, -12, 14, 14, '#f0c08a')}${r(-7, -13, 14, 5, '#5a3b2e')}
     ${r(-4, -5, 2, 3, '#2b2b2b')}${r(2, -5, 2, 3, '#2b2b2b')}
   </g></g>`;
+}
+
+// ── 村民：男人、女人、小男孩、小女孩、爺爺、奶奶。腳底在 y=0，整個人往上畫。
+const SKIN = '#f0c08a';
+const GREY = '#d9d4cc';
+const SHOE = '#4a3328';
+
+function villagerBody(shirt, hair, { skirt, pants = '#33495e' } = {}) {
+  const lower = skirt ?
+    `${r(-9, -16, 18, 7, skirt)}${r(-7, -22, 14, 7, skirt)}
+     ${r(-5, -8, 4, 8, SKIN)}${r(1, -8, 4, 8, SKIN)}${r(-6, -3, 5, 3, SHOE)}${r(1, -3, 5, 3, SHOE)}` :
+    `${r(-6, -12, 5, 12, pants)}${r(1, -12, 5, 12, pants)}${r(-7, -3, 6, 3, SHOE)}${r(1, -3, 6, 3, SHOE)}`;
+  return `${r(-9, -3, 18, 4, 'rgba(0,0,0,.18)')}${lower}
+    ${r(-8, -24, 16, 14, shirt)}${r(-11, -23, 3, 10, shirt)}${r(8, -23, 3, 10, shirt)}
+    ${r(-11, -14, 3, 3, SKIN)}${r(8, -14, 3, 3, SKIN)}
+    ${r(-7, -38, 14, 14, SKIN)}${hair}
+    ${r(-4, -32, 2, 3, '#2b2b2b')}${r(2, -32, 2, 3, '#2b2b2b')}${r(-2, -28, 4, 1, '#a9644a')}`;
+}
+
+// 六種人：小孩矮一點，老人家矮一點點、頭髮白、奶奶包頭、爺爺拄拐杖。
+const VILLAGER_KINDS = {
+  man: { label: '男人', scale: 1, body: shirt => villagerBody(shirt, r(-7, -39, 14, 6, '#5a3b2e')) },
+  woman: {
+    label: '女人', scale: 1,
+    body: shirt => villagerBody(shirt,
+      `${r(-7, -39, 14, 6, '#4a2f22')}${r(-9, -37, 2, 15, '#4a2f22')}${r(7, -37, 2, 15, '#4a2f22')}`,
+      { skirt: '#c96a9b' }),
+  },
+  boy: {
+    label: '小男孩', scale: .76,
+    body: shirt => villagerBody(shirt,
+      `${r(-7, -40, 14, 5, '#3b2a20')}${r(-9, -36, 2, 3, '#3b2a20')}${r(7, -36, 2, 3, '#3b2a20')}`),
+  },
+  girl: {
+    label: '小女孩', scale: .76,
+    body: shirt => villagerBody(shirt,
+      `${r(-7, -39, 14, 6, '#5a3b2e')}${r(-10, -36, 3, 10, '#5a3b2e')}${r(7, -36, 3, 10, '#5a3b2e')}
+       ${r(-11, -40, 4, 4, '#f26b8a')}${r(7, -40, 4, 4, '#f26b8a')}`,
+      { skirt: '#f0a6c0' }),
+  },
+  grandpa: {
+    label: '爺爺', scale: .9,
+    body: shirt => `${villagerBody(shirt,
+      `${r(-7, -39, 14, 3, GREY)}${r(-8, -38, 3, 7, GREY)}${r(5, -38, 3, 7, GREY)}`)}
+      ${r(-6, -28, 12, 4, '#efeae1')}${r(11, -30, 2, 30, '#8d5f35')}`,
+  },
+  grandma: {
+    label: '奶奶', scale: .9,
+    body: shirt => `${villagerBody(shirt,
+      `${r(-7, -39, 14, 5, GREY)}${r(-4, -44, 8, 5, GREY)}${r(-8, -36, 2, 6, GREY)}${r(6, -36, 2, 6, GREY)}`,
+      { skirt: '#8f6bd1' })}${r(-9, -25, 18, 5, '#efeae1')}`,
+  },
+};
+
+export const villagerKinds = () => Object.keys(VILLAGER_KINDS);
+export const villagerLabel = kind => (VILLAGER_KINDS[kind] ?? VILLAGER_KINDS.man).label;
+
+// 腳底對齊 hero(x, y) 站的地方，換人不用改位置。
+export function villager(kind = 'man', x = 0, y = 0, extra = '', shirt = '#e2574c') {
+  const spec = VILLAGER_KINDS[kind] ?? VILLAGER_KINDS.man;
+  return `<g ${extra}><g transform="translate(${x} ${y + 24}) scale(${spec.scale})">${spec.body(shirt)}</g></g>`;
+}
+
+// 村民名牌上的小圖（16×16）。
+export function villagerBadge(kind, shirt = '#e2574c') {
+  const spec = VILLAGER_KINDS[kind] ?? VILLAGER_KINDS.man;
+  return `<g transform="translate(8 15.5) scale(${0.34 * spec.scale})">${spec.body(shirt)}</g>`;
 }
 
 export function flag(x, y, raised = true) {
@@ -243,7 +310,7 @@ function building(size, level, selected, locked = false, weedy = false) {
       parts.push(r(x + 8, y + 136, 6, 6, '#f26b8a'), r(x + 18, y + 140, 6, 6, '#f2c14e'));
     }
     if (level >= 3) {
-      parts.push(hero(x + 20, y + 112, '', place.color));
+      parts.push(villager(VILLAGERS[size].kind, x + 22, y + 112, 'class="resident"', place.color));
       parts.push(r(x + 124, y + 4, 3, 26, '#6b5a3e'), r(x + 127, y + 4, 20, 12, '#f2c14e'));
     }
   }
@@ -280,6 +347,19 @@ export function villageHeroPath(from, to) {
   return from.y > RIVER_Y ? [BRIDGE_FOOT, BRIDGE_TOP, to] : [BRIDGE_TOP, BRIDGE_FOOT, to];
 }
 
+// 搬進來的村民會出來逛：先是這岸的街上，後面幾個在對岸。越蓋越熱鬧。
+const STROLL = [
+  [356, 486, 'girl', '#e07b9a'], [446, 464, 'man', '#4a86c8'],
+  [356, 424, 'grandma', '#9b6fc0'], [446, 392, 'boy', '#5fae6a'],
+  [356, 198, 'woman', '#e2a33c'], [446, 178, 'grandpa', '#7f8795'],
+  [356, 136, 'girl', '#6fb6c8'], [446, 112, 'man', '#d9674f'],
+];
+
+function strollers(state) {
+  return STROLL.slice(0, villagerCount(state)).map(([x, y, kind, shirt], i) =>
+    villager(kind, x, y, `class="resident" style="animation-delay:${i * 320}ms"`, shirt)).join('');
+}
+
 export function villageScene(state, selected, heroAt = VILLAGE_HOME) {
   let ground = '';
   for (let y = 0; y < 26; y++) {
@@ -312,5 +392,6 @@ export function villageScene(state, selected, heroAt = VILLAGE_HOME) {
   const plots = SIZES.map(size => building(size, state.levels[size], selected === size,
     !isUnlocked(state, size), isWeedy(state, size))).join('');
   const walker = hero(0, 0, `class="hero walker" style="transform:translate(${heroAt.x}px,${heroAt.y}px)"`);
-  return svg(800, 520, `${ground}${bridge}${plots}${walker}`, 'class="village-svg" role="group" aria-label="村莊地圖"');
+  return svg(800, 520, `${ground}${bridge}${plots}${strollers(state)}${walker}`,
+    `class="village-svg" role="group" aria-label="村莊地圖，住了 ${villagerCount(state)} 個村民"`);
 }

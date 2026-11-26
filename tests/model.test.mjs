@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ACROSS_SIZES, BRIDGE, PLACES, SIZES, STALE_DAYS, UPGRADE_COST } from '../js/data.js';
+import {
+  ACROSS_SIZES, BRIDGE, MAX_LEVEL, PLACES, SIZES, STALE_DAYS, UPGRADE_COST, VILLAGERS,
+} from '../js/data.js';
 import {
   allFacts, daysSince, decodeBackup, earn, eggReady, encodeBackup, factKey, freshState,
   isMastered, isNewFact, isUnlocked, isWeedy, knownBefore, outcomeOf, placePlanks, product,
@@ -9,6 +11,7 @@ import {
 } from '../js/model.js';
 import {
   bridgeScene, closedGroup, freeScene, openGroup, villageHeroPath, villageHeroStop, villageScene,
+  villager, villagerBadge, villagerKinds,
 } from '../js/art.js';
 
 const fixed = () => 0.5;
@@ -33,21 +36,18 @@ test('2～9 各乘 1～9，共 72 個算式，算式與總數一致', () => {
   }
 });
 
-test('每個地點都有題目、單位與圖，題目用「每組幾個 × 有幾組」', () => {
+test('每個地點都有單位與圖，箱子上寫每組的數量', () => {
   for (const size of SIZES) {
     const place = PLACES[size];
     for (const key of ['name', 'kind', 'group', 'item', 'unit', 'each', 'deliver', 'done']) {
       assert.ok(place[key], `${size} 缺少 ${key}`);
     }
     for (let count = 1; count <= 9; count++) {
-      assert.match(place.ask(count), new RegExp(`${count} `), `${size}×${count} 的題目要寫出組數`);
       assert.match(openGroup(size, place), /^<svg/);
       assert.match(openGroup(size, place, true), /^<svg/);
       assert.match(closedGroup(size, place), new RegExp(`>${size}<`), '箱子上寫每組的數量');
     }
   }
-  assert.match(PLACES[5].ask(3), /幾元/, '五元硬幣問的是共幾元');
-  assert.doesNotMatch(PLACES[5].ask(3), /幾枚/);
 });
 
 test('6～9 第一次是新題，2～5 不算新題', () => {
@@ -79,6 +79,14 @@ test('作答結果：用了線索或答錯過，就不算自己答對', () => {
   assert.equal(outcomeOf({ hint: 0, missed: false }), 'independent');
   assert.equal(outcomeOf({ hint: 1, missed: false }), 'supported');
   assert.equal(outcomeOf({ hint: 0, missed: true }), 'supported');
+});
+
+test('第一次遇到的題目可以直接作答，打開箱子數出來的才算動手看過', () => {
+  const first = extra => ({ mode: 'explore', opened: 0, hint: 0, missed: false, ...extra });
+  assert.equal(outcomeOf(first()), 'independent', '沒打開箱子就答對，算自己答對');
+  assert.equal(outcomeOf(first({ opened: 1 })), 'explored', '打開來數出來的，算動手看過');
+  assert.equal(outcomeOf(first({ opened: 3, missed: true })), 'supported', '答錯過就是用了幫忙');
+  assert.equal(rewardFor('explored'), rewardFor('supported'), '動手看過跟用線索一樣的木材');
 });
 
 test('卡住的題目隔幾個動作或下次再出，不會馬上重問', () => {
@@ -354,4 +362,27 @@ test('要去對岸的小人會先走到橋頭，從橋上過河', () => {
   const back = villageHeroPath(coop, shop);
   assert.ok(back[0].y < back[1].y, '回來的方向相反');
   assert.deepEqual(back[2], shop);
+});
+
+test('每個地點都有村民，六種人都住得到，搬進來才會出現在村莊裡', () => {
+  const kinds = villagerKinds();
+  assert.deepEqual([...kinds].sort(), ['boy', 'girl', 'grandma', 'grandpa', 'man', 'woman']);
+  for (const size of SIZES) {
+    const who = VILLAGERS[size];
+    assert.ok(who.name, `${size} 少了村民的名字`);
+    assert.ok(kinds.includes(who.kind), `${size} 的村民是 ${who.kind}，畫不出來`);
+    assert.match(villager(who.kind), /^<g/);
+    assert.match(villagerBadge(who.kind), /^<g/);
+  }
+  assert.equal(new Set(SIZES.map(size => VILLAGERS[size].kind)).size, kinds.length,
+    '六種人都要有地方住，村莊才熱鬧');
+
+  const residents = scene => (scene.match(/class="resident"/g) ?? []).length;
+  const state = crossed();
+  assert.equal(residents(villageScene(state, null)), 0, '還沒蓋好就還沒有人');
+  state.levels[2] = MAX_LEVEL;
+  assert.equal(residents(villageScene(state, null)), 2, '一個村民：站在門口，也出來逛街');
+  assert.equal(villagerCount(state), 1);
+  for (const size of SIZES) state.levels[size] = MAX_LEVEL;
+  assert.equal(residents(villageScene(state, null)), SIZES.length * 2, '蓋滿了，村莊最熱鬧');
 });

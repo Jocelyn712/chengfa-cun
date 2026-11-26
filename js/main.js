@@ -10,7 +10,7 @@ import {
 } from './model.js';
 import {
   bridgeScene, closedGroup, freeScene, heroTransform, openGroup, propIcon, villageHeroPath,
-  villageHeroStop, villageScene, woodIcon,
+  villageHeroStop, villageScene, villagerBadge, villagerLabel, woodIcon,
 } from './art.js';
 
 const app = document.querySelector('#app');
@@ -88,7 +88,8 @@ function canResume() {
   if (!active) return null;
   if (active.view === 'mission') {
     const mission = state.missions[factKey(active.size, active.count)];
-    return mission && mission.phase !== 'done' ? `${PLACES[active.size].name}的任務` : null;
+    return mission && mission.phase !== 'done' ?
+      `${PLACES[active.size].name}的 ${active.size}×${active.count}` : null;
   }
   if (active.view === 'bridge') return state.bridge.segments.some(s => !s.flagged) ? '修橋' : null;
   return null;
@@ -98,9 +99,11 @@ function villagersPanel() {
   return `<div class="villagers"><h3>搬進來的村民 ${villagerCount(state)} / ${SIZES.length}</h3>
     <div class="villager-row">${SIZES.map(size => {
       const here = state.levels[size] >= MAX_LEVEL;
-      return `<span class="villager ${here ? 'here' : ''}" style="--c:${PLACES[size].color}" title="${here ? VILLAGERS[size] : '還沒搬來'}">
-        <svg viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true">${propIcon(PLACES[size].kind)}</svg>
-        <small>${here ? VILLAGERS[size].slice(-2) : size}</small></span>`;
+      const who = VILLAGERS[size];
+      return `<span class="villager ${here ? 'here' : ''}" style="--c:${PLACES[size].color}"
+        title="${here ? `${who.name}（${villagerLabel(who.kind)}）` : `${PLACES[size].name}還沒蓋好，${who.name}還沒搬來`}">
+        <svg viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true">${villagerBadge(who.kind, PLACES[size].color)}</svg>
+        <small>${here ? who.name.slice(-2) : size}</small></span>`;
     }).join('')}</div></div>`;
 }
 
@@ -161,10 +164,10 @@ function placePanel(size) {
       `<p class="weedy">🌿 好幾天沒來，長草了！幫一次忙就順手除草，多拿 ${WEED_WOOD} 塊木材。</p>` : ''}
     <div class="stack">
       ${btn('幫忙', 'pick', { cls: 'primary big', attrs: `data-size="${size}"` })}
-      ${cost === null ? `<p class="happy">${VILLAGERS[size]}搬進來了！</p>` :
+      ${cost === null ? `<p class="happy">${VILLAGERS[size].name}搬進來了！</p>` :
         `${btn(`升級 ${wood(cost)}`, 'upgrade', { cls: 'big', attrs: `data-size="${size}" ${have < cost ? 'disabled' : ''}` })}
          ${have < cost ? `<p class="soft">還差 ${cost - have} 塊。在${place.name}幫忙才會拿到${place.name}的木材。</p>` :
-           level === MAX_LEVEL - 1 ? `<p class="soft">再升一級，${VILLAGERS[size]}就會搬進來！</p>` : ''}`}
+           level === MAX_LEVEL - 1 ? `<p class="soft">再升一級，${VILLAGERS[size].name}就會搬進來！</p>` : ''}`}
       ${btn('回村莊', 'village', { cls: 'quiet' })}
     </div>
   </div>`;
@@ -276,11 +279,11 @@ function pickView() {
   const place = PLACES[size];
   return `<div class="narrow"><div class="panel">
     <p class="tag">${size} 的乘法・${place.name}</p>
-    <h2>${place.each}。要幫幾${place.group}？</h2>
+    <h2>要算哪一題？</h2>
     <div class="count-grid">${range(9).map(i => {
       const count = i + 1;
       const mastered = isMastered(state.records[factKey(size, count)]);
-      return btn(`${count}<small>${place.group}</small>`, 'start', { cls: `count ${mastered ? 'mastered' : ''}`, attrs: `data-count="${count}"` });
+      return btn(`${size}×${count}`, 'start', { cls: `count ${mastered ? 'mastered' : ''}`, attrs: `data-count="${count}"` });
     }).join('')}</div>
     <div class="stack">${btn('幫我挑', 'start-auto', { cls: 'big' })}${btn('回村莊', 'village', { cls: 'quiet' })}</div>
   </div></div>`;
@@ -290,8 +293,8 @@ const missionOf = r => state.missions[factKey(r.size, r.count)];
 
 function groupsView(size, count, mission) {
   const place = PLACES[size];
-  const known = mission.hint >= 3 ? knownBefore(state, size, count) : null;
-  const counting = mission.mode === 'explore' || mission.hint >= 2 || mission.phase !== 'ask';
+  const known = hintLevel(mission) >= 3 ? knownBefore(state, size, count) : null;
+  const counting = hintLevel(mission) >= 2 || mission.phase !== 'ask';
   const cards = range(count).map(i => {
     const open = mission.phase !== 'ask' || i < mission.opened;
     const tappable = !open && counting && mission.phase === 'ask';
@@ -306,18 +309,28 @@ function groupsView(size, count, mission) {
   return `${banner}<div class="groups">${cards}</div>`;
 }
 
+// 第一次遇到的題目，箱子本來就點得開、數字也會累加，等於前兩層線索已經給了。
+const hintLevel = mission => (mission.mode === 'explore' ? Math.max(2, mission.hint) : mission.hint);
+
 function hintButton(size, count, mission) {
   const place = PLACES[size];
-  if (mission.hint === 0) return btn(`打開一${place.group}看看`, 'hint', { cls: 'hint' });
-  if (mission.hint === 1 && count > 1) return btn(`一${place.group}一${place.group}打開`, 'hint', { cls: 'hint' });
-  if (mission.hint === 2 && knownBefore(state, size, count)) return btn('用學過的', 'hint', { cls: 'hint' });
+  const level = hintLevel(mission);
+  if (level === 0) return btn(`打開一${place.group}看看`, 'hint', { cls: 'hint' });
+  if (level === 1 && count > 1) return btn(`一${place.group}一${place.group}打開`, 'hint', { cls: 'hint' });
+  if (level === 2 && knownBefore(state, size, count)) return btn('用學過的', 'hint', { cls: 'hint' });
   return '';
 }
 
 function hintText(size, count, mission) {
   const place = PLACES[size];
-  if (mission.hint === 2 && mission.opened < count) return `<p class="hint-box">點箱子，一${place.group}一${place.group}打開，數字會幫你加起來。</p>`;
-  if (mission.hint === 3) return `<p class="hint-box">再加 1 ${place.group}，也就是再加 ${size}，是多少？</p>`;
+  const level = hintLevel(mission);
+  if (mission.mode === 'explore' && mission.hint === 0) {
+    return mission.opened < count ?
+      `<p class="hint-box">知道答案就直接按數字。想先看看的話，點箱子一${place.group}一${place.group}打開，數字會幫你加起來。</p>` :
+      `<p class="hint-box">全部打開了，一共 ${size * count} ${place.unit}。按數字告訴我答案。</p>`;
+  }
+  if (level === 2 && mission.opened < count) return `<p class="hint-box">點箱子，一${place.group}一${place.group}打開，數字會幫你加起來。</p>`;
+  if (level === 3) return `<p class="hint-box">再加 1 ${place.group}，也就是再加 ${size}，是多少？</p>`;
   return '';
 }
 
@@ -341,21 +354,16 @@ function workPanel(size, count, mission) {
       <div class="stack">${next}${btn('回村莊', 'village-place', { cls: 'big', attrs: `data-size="${size}"` })}</div></div>`;
   }
   if (mission.phase === 'ready') {
-    return `<div class="panel">${tag}<h2>${mission.outcome === 'independent' ? '答對了！' : '算出來了！'}一共 ${total} ${place.unit}</h2>
+    return `<div class="panel">${tag}
+      <h2 class="ask">${mission.outcome === 'independent' ? '答對了！' : '算出來了！'}${size}×${count}＝${total}</h2>
       ${equation(size, count)}
-      <p>每${place.group}都是 ${size}，一樣多。${count} ${place.group}就是 ${size}×${count}。</p>
+      <p>每${place.group}都是 ${size}，一樣多，${count} ${place.group}就是 ${size}×${count}。</p>
       ${btn(place.deliver, 'deliver', { cls: 'primary big' })}</div>`;
   }
-  if (mission.mode === 'explore') {
-    const opened = mission.opened;
-    return `<div class="panel">${tag}<h2>第一次來${place.name}！</h2>
-      <p>${place.each}。要準備 ${count} ${place.group}。</p>
-      <p class="hint-box">${opened < count ? `點箱子，一${place.group}一${place.group}打開看看。` : '全部打開了！'}</p>
-      ${opened === count ? `${equation(size, count)}<p>每${place.group}一樣多，可以用乘法算：${size}×${count}。</p>${btn(place.deliver, 'deliver', { cls: 'primary big' })}` : ''}
-      ${btn('先跳過', 'skip', { cls: 'quiet' })}</div>`;
-  }
-  return `<div class="panel">${tag}<h2>${place.ask(count)}</h2>
-    <p class="soft">${place.each}。</p>
+  // 第一次遇到的題目：箱子一開始就點得開，但知道答案的話可以直接輸入，不用先打開。
+  const firstTime = mission.mode === 'explore';
+  return `<div class="panel">${tag}<h2 class="ask">${size}×${count}＝？</h2>
+    <p class="soft">${firstTime ? `第一次來${place.name}。` : ''}${place.each}。</p>
     ${numberPad(mission.draft, place.unit, '確定', 'answer')}
     ${mission.feedback ? `<p class="note">${mission.feedback}</p>` : ''}
     <div class="hint-row">${hintButton(size, count, mission)}</div>
@@ -367,7 +375,7 @@ function missionView() {
   const { size, count } = route;
   const mission = missionOf(route);
   return `<div class="layout mission">
-    <section class="stage"><h2 class="stage-title">${count} ${PLACES[size].group}，每${PLACES[size].group} ${size} ${PLACES[size].unit}</h2>
+    <section class="stage"><h2 class="stage-title">${size}×${count}：${count} ${PLACES[size].group}，每${PLACES[size].group} ${size} ${PLACES[size].unit}</h2>
       ${groupsView(size, count, mission)}</section>
     <aside class="side">${workPanel(size, count, mission)}</aside>
   </div>`;
@@ -684,7 +692,7 @@ const actions = {
   },
   hint: () => {
     const mission = missionOf(route);
-    mission.hint++;
+    mission.hint = hintLevel(mission) + 1;
     if (mission.hint === 1) mission.opened = Math.max(mission.opened, 1);
     render();
   },
@@ -707,7 +715,7 @@ const actions = {
   },
   deliver: () => {
     const mission = missionOf(route);
-    finishMission(mission, mission.mode === 'explore' ? 'explored' : mission.outcome ?? outcomeOf(mission));
+    finishMission(mission, mission.outcome ?? outcomeOf(mission));
   },
   skip: () => finishMission(missionOf(route), 'skipped'),
   'copy-backup': async () => {

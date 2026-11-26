@@ -152,6 +152,10 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 32px max(16px, env(sa
 .villager svg { width: 28px; height: 28px; }
 .villager small { font-size: 12px; font-weight: 800; }
 
+/* 村民站在門口和街上，輕輕晃一下，村莊看起來有人住。 */
+.resident { animation: bob 2.8s ease-in-out infinite; }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+
 /* ── 修橋 */
 .hero { transition: transform 1.4s ease-in-out; }
 /* 村莊裡的小人走路比較短，橋上那段慢慢走。 */
@@ -168,9 +172,10 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 32px max(16px, env(sa
 
 /* ── 任務 */
 .count-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.btn.count { min-height: 80px; font-size: 34px; flex-direction: column; gap: 0; }
-.btn.count small { font-size: 16px; color: var(--soft); }
+.btn.count { min-height: 80px; font-size: 30px; letter-spacing: 1px; }
 .btn.count.mastered { background: #e4f2d4; }
+/* 算式題目直接寫 2×3＝？，不繞話。 */
+h2.ask { font-size: 40px; letter-spacing: 2px; }
 .stage { padding: 16px; background: #d6eac0; border: 4px solid var(--line); border-radius: 14px; display: grid; gap: 12px; }
 .stage-title { font-size: 22px; }
 .groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
@@ -228,5 +233,5 @@ main { padding: 16px max(16px, env(safe-area-inset-right)) 32px max(16px, env(sa
 }
 @media (prefers-reduced-motion: reduce) {
   .hero { transition-duration: .2s; }
-  .drop, .blink, .group.tappable, .group.open .art, .plot.grow, .weed { animation: none; }
+  .drop, .blink, .group.tappable, .group.open .art, .plot.grow, .weed, .resident { animation: none; }
 }
